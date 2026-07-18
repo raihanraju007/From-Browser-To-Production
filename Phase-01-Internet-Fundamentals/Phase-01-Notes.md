@@ -1,197 +1,168 @@
 # Phase 01 — Internet Fundamentals (Complete Notes)
 
-> How the Internet works, IP addresses, MAC, routers, switches, NAT, ports, TCP/UDP, OSI model.
-> (Lesson 01 — How the Internet Works — has its own detailed file. This chapter covers everything else.)
+> How the Internet works, clients & servers, packets, IP addresses, MAC, routers, switches, NAT, ports, TCP/UDP, OSI model.
 
 ---
 
-## 1. Quick recap of Lesson 01
+## 1. What is the Internet?
 
-- The Internet = network of networks, connected by cables + radio, speaking shared **protocols**.
-- **Client** asks, **server** answers. They are roles, not machines. Servers never initiate.
-- Data travels as **packets** (~1,500 bytes), each with source address, destination address, and sequence number. Routers forward packets hop by hop.
+The Internet is not a cloud and not magic. It is millions of computers connected by **physical cables** (fiber optic under oceans, copper into buildings) and **radio waves** (WiFi, 4G/5G), all agreeing to speak shared rules called **protocols**.
 
-Open question from Lesson 01: *what exactly is an "address"?* → This chapter.
+Two core ideas:
+1. **Physical connections** — wires and radios carrying electrical/light signals.
+2. **Protocols** — shared rules so any computer can talk to any other, regardless of brand, OS, or country.
 
----
+The Internet is a **network of networks** (*inter-net*): your home network + office network + Google's network + ISP networks, interconnected. Nobody owns it; there is no central computer.
 
-## 2. IP Addresses
+**Why it was created (1960s, ARPANET):** expensive university computers couldn't talk to each other, and researchers wanted a network with **no single point of failure** — if one path dies, traffic routes around it. That decentralization still defines the Internet.
 
-### What is it?
-An IP (Internet Protocol) address is the unique number identifying a machine on a network, e.g. `142.250.190.78`. Packets carry a destination IP so routers know where to send them.
+## 2. Client and Server — the most important concept
 
-**Analogy:** a postal address for a computer. No address → the postman (router) cannot deliver.
+Every Internet interaction has two roles:
 
-### IPv4
-- Format: 4 numbers, 0–255 each, separated by dots: `192.168.0.101`
-- Each number is 8 bits → total 32 bits → about **4.3 billion** possible addresses.
-- Problem: the world has far more devices than 4.3 billion. IPv4 ran out. Two fixes were invented: **NAT** (below) and **IPv6**.
+| Role | What it does | Examples |
+|------|--------------|----------|
+| **Client** | *Asks* — always starts the conversation | Browser, mobile app, `curl`, Java `RestTemplate` |
+| **Server** | *Answers* — sits waiting, listening | NGINX, Spring Boot app, PostgreSQL |
 
-### IPv6
-- 128 bits, written in hex: `2404:6800:4002:81e::200e`
-- Enough addresses for every grain of sand on Earth. Adoption is gradual; most systems today run both (dual stack).
+⭐ **Key insights most beginners miss:**
+- Client and server are **roles, not machines**. A server is not special hardware — it's any computer running a program that *listens*. Your laptop becomes a server the moment you run `mvn spring-boot:run`.
+- The same program can be both: your Spring Boot app is a **server** to browsers but a **client** when it calls PostgreSQL.
+- **Servers never initiate; clients always start the conversation.**
 
-### Public IP vs Private IP
-- **Public IP** — globally unique, reachable from the Internet. Your router gets one from your ISP. A production server (EC2, VPS) has one.
-- **Private IP** — only valid inside a local network. Reserved ranges (memorize these):
+**Analogy — the restaurant 🍔:** you (client) order a burger (request); the kitchen (server) is always open, waiting, cooks (processing); the waiter brings food (response). The kitchen never comes to your house asking if you're hungry — and it serves many tables at once (one server, thousands of clients).
+
+## 3. How data travels: packets
+
+Data is **never sent as one big chunk**. It's chopped into **packets** (~1,500 bytes each), each carrying:
+- **Destination address** — where it's going
+- **Source address** — where it came from (so the reply knows the way back)
+- **Sequence number** — so pieces can be reassembled in order
+- A chunk of the actual data
+
+Packets travel independently — they may take **different physical routes** — and are reassembled at the destination.
+
+**Analogy — mailing a book 📬:** a 500-page book, but the post office only accepts thin envelopes. Send 500 envelopes labeled "page 137 of 500". Some go by truck, some by plane; the receiver reorders and rebuilds. If envelope 137 is lost, only that one is resent (that resend mechanism = TCP, §8).
+
+### The journey — architecture diagram
 
 ```
-10.0.0.0    – 10.255.255.255     (10.x.x.x)      ← AWS VPCs commonly use this
-172.16.0.0  – 172.31.255.255                     ← Docker commonly uses this
-192.168.0.0 – 192.168.255.255                    ← home routers commonly use this
+ YOUR LAPTOP (CLIENT)                                  SERVER MACHINE
+┌──────────────────┐                                 ┌──────────────────┐
+│  Browser         │                                 │  Spring Boot app │
+│  "GET /home"     │                                 │  (listening,     │
+└────────┬─────────┘                                 │   waiting...)    │
+         │ request broken into packets               └────────▲─────────┘
+         ▼                                                    │
+┌──────────────────┐      ┌────────┐      ┌────────┐          │
+│  WiFi / Ethernet │─────►│  Home  │─────►│  ISP   │──► ... ──┘
+│  (network card)  │      │ Router │      └────────┘   10–25 routers,
+└──────────────────┘      └────────┘                   fiber cables,
+                                                       possibly under sea
+         RESPONSE travels the same way, backwards.
 ```
 
-Every device in your home has a private IP (e.g. `192.168.0.101`), but they all share ONE public IP when talking to the Internet.
+**Real-world example:** opening `facebook.com` from Dhaka — packets go through your ISP → submarine fiber (SEA-ME-WE cables) → a data center, possibly Singapore → back in ~100–300 ms. Light in fiber ≈ ⅔ light speed → **distance = delay** → why CDNs exist (Phase 8).
 
-**Analogy:** private IP = apartment number (Flat 4B — meaningless outside the building). Public IP = the building's street address.
+## 4. IP Addresses
 
-### Localhost — 127.0.0.1
-- `127.0.0.1` (name: `localhost`) always means **this machine itself**. Traffic to it never leaves your computer — no cable, no router.
-- That's why `http://localhost:8080` works with WiFi off, and why nobody else can open *your* localhost.
-- `0.0.0.0` when used by a *server* means "listen on ALL my network interfaces" — accept connections from localhost AND from the network. Important later in Docker and NGINX configs.
+An IP address is the unique number identifying a machine on a network — the destination written on every packet. **Analogy:** a postal address for a computer.
 
-### Commands
+### IPv4 and IPv6
+- **IPv4**: 4 numbers 0–255, e.g. `192.168.0.101` — 32 bits ≈ 4.3 billion addresses. The world has more devices than that → two fixes: **NAT** (§6) and **IPv6**.
+- **IPv6**: 128 bits in hex, `2404:6800:4002:81e::200e` — practically unlimited; most systems run both (dual stack).
+
+### Public vs Private IP
+- **Public IP** — globally unique, reachable from the Internet (your router gets one from the ISP; a VPS/EC2 has one).
+- **Private IP** — valid only inside a local network. Reserved ranges (memorize):
+
+```
+10.0.0.0    – 10.255.255.255      ← AWS VPCs commonly use this
+172.16.0.0  – 172.31.255.255      ← Docker commonly uses this
+192.168.0.0 – 192.168.255.255     ← home routers commonly use this
+```
+
+**Analogy:** private IP = apartment number (Flat 4B — meaningless outside the building); public IP = the building's street address.
+
+### Localhost
+- `127.0.0.1` (= `localhost`) always means **this machine itself**. Traffic never leaves your computer — works with WiFi off; nobody else can open *your* localhost.
+- `0.0.0.0` for a *server* means "listen on ALL my interfaces" — accept connections from localhost AND the network. Critical later in Docker and NGINX.
+
 ```bash
-ip addr            # your machine's IPs on each interface (look for "inet")
+ip addr            # your machine's IPs per interface (look for "inet")
 curl ifconfig.me   # your PUBLIC IP (as the Internet sees you)
-ping 127.0.0.1     # talk to yourself — works even offline
+ping 127.0.0.1     # talk to yourself — works offline
 ```
 
-Compare `ip addr` output with `curl ifconfig.me` — they differ. That difference is NAT (below).
+## 5. Network interfaces, MAC addresses
 
----
+- **Interface** = the port through which a machine joins a network: `lo` (loopback/localhost), `eth0` (wired), `wlan0` (WiFi), `docker0` (virtual, Phase 6). One machine can have many, each with its own IP.
+- **MAC address** = permanent hardware serial of a network card: `a4:5e:60:d3:8c:1f`. **IP vs MAC:** IP = postal address (changes when you move networks); MAC = national ID (permanent). MAC is used only for delivery *within* the local network (switches); the wider Internet routes on IPs.
 
-## 3. Network Interfaces and MAC Addresses
+## 6. Routers, switches, NAT
 
-### Network interface
-The hardware/software port through which a machine connects to a network. Typical names on Linux:
+- **Switch** — connects devices within ONE local network, delivers by **MAC** (L2). Analogy: reception desk inside one building.
+- **Router** — connects networks to each other, forwards by **IP** (L3) using a routing table; no router knows the full path, only the next best hop. Analogy: inter-city postal sorting hub. Your home "router" box = router + switch + WiFi + DHCP + NAT in one.
 
-```
-lo        → loopback (localhost lives here)
-eth0/enp… → wired Ethernet
-wlan0/wlp…→ WiFi
-docker0   → virtual interface created by Docker (Phase 6!)
-```
-
-One machine can have many interfaces, each with its own IP. `ip addr` lists them.
-
-### MAC address
-- A permanent hardware serial number burned into every network card: `a4:5e:60:d3:8c:1f` (48 bits).
-- **IP vs MAC:** IP = your postal address (changes when you move networks). MAC = your national ID (permanent, identifies the physical card).
-- MAC is used for delivery within the *local* network only (switches use it). It never survives past your router — the Internet routes purely on IPs.
-
----
-
-## 4. Routers and Switches
-
-### Switch
-- Connects devices **within one local network**. Delivers frames using **MAC addresses**.
-- Analogy: the reception desk inside one office building — knows every employee by face, delivers internal mail. Knows nothing about other buildings.
-
-### Router
-- Connects **different networks** to each other. Forwards packets using **IP addresses**.
-- Maintains a *routing table*: "for destinations like X, next hop is Y." No router knows the whole path — each just knows the best next step.
-- Analogy: the inter-city postal sorting hub.
-
-```
-[laptop]──┐
-[phone]───┼──[ SWITCH ]──[ ROUTER ]──( ISP )──( Internet )
-[TV]──────┘   MAC-based    IP-based
-              local only   between networks
-```
-
-Your home "router" box is really router + switch + WiFi access point + DHCP server + NAT in one.
-
----
-
-## 5. NAT — Network Address Translation
-
-### What problem does it solve?
-Not enough public IPv4 addresses for every device. NAT lets a whole private network share ONE public IP.
-
-### How it works
-Your router rewrites packets on the way out and remembers who asked:
+### NAT — Network Address Translation
+Solves IPv4 scarcity: a whole private network shares ONE public IP. The router rewrites outgoing packets and remembers who asked:
 
 ```
 laptop 192.168.0.101:53000 ──► google.com:443
-        router rewrites source to:  103.120.5.9:61001   ← public IP
-        router notes: "61001 belongs to 192.168.0.101:53000"
-
-reply from google ──► 103.120.5.9:61001
-        router looks up 61001 ──► forwards to laptop 192.168.0.101
+   router rewrites source →  103.120.5.9:61001   (public IP)
+   router notes: 61001 ↔ 192.168.0.101:53000
+reply → 103.120.5.9:61001 → router looks it up → forwards to the laptop
 ```
 
-**Analogy:** an office receptionist. All employees call out via one office phone number; the receptionist remembers who dialed whom and routes callbacks to the right desk.
+**Analogy:** office receptionist — everyone calls out via one office number; she remembers who dialed whom and routes callbacks to the right desk.
 
-### Consequence you will hit in real work
-Outside machines **cannot initiate** connections to a device behind NAT (the receptionist doesn't know whom the call is for). This is why you can't just run a server on your laptop and have the world reach it — and why we deploy on VPS/cloud machines that have real public IPs (Phase 7). It also acts as accidental security.
+**Consequence you'll hit in real work:** outside machines **cannot initiate** connections to a device behind NAT — that's why your laptop can't serve the world, and why we deploy on VPS/cloud machines with real public IPs (Phase 7).
 
----
+## 7. Ports
 
-## 6. Ports
+An IP finds the *machine*; a **port** (1–65535) finds the *program* on it. **Analogy:** IP = building, port = apartment number → `142.250.4.100:443`.
 
-### What problem do they solve?
-An IP finds the *machine* — but which *program* on it? A machine runs many network programs at once. **Ports** (numbers 1–65535) identify which program a packet is for.
-
-**Analogy:** IP = building address, port = apartment number. `142.250.4.100:443` = building 142.250.4.100, apartment 443.
-
-### Standard ports (memorize)
 ```
-22    SSH             80    HTTP            443   HTTPS
-25    SMTP (mail)     53    DNS             3306  MySQL
-5432  PostgreSQL      6379  Redis           8080  common dev HTTP (Spring Boot default)
+22 SSH      80 HTTP      443 HTTPS     53 DNS
+25 SMTP     3306 MySQL   5432 PostgreSQL   6379 Redis   8080 Spring Boot default
 ```
 
-- Ports below 1024 are "privileged" (need root to listen on).
-- A server program "listens" on a port. Only ONE program can listen on a given port at a time → the classic error `Address already in use: bind` when you start Spring Boot twice.
+- Ports below 1024 are privileged (need root to listen).
+- Only ONE program can listen on a port → the classic `Address already in use` when you start Spring Boot twice.
 
-### Commands
 ```bash
-sudo ss -tulpn                 # what's listening on which port (modern)
-sudo lsof -i :8080             # which process owns port 8080
-kill <PID>                     # stop it
+sudo ss -tulpn                 # what's listening on which port
+sudo lsof -i :8080             # which process owns 8080
+kill <PID>
 ```
 
----
+## 8. TCP and UDP
 
-## 7. TCP and UDP
-
-Two protocols for actually delivering packets. Both use IPs and ports; they differ in guarantees.
+Both deliver packets using IPs + ports; they differ in guarantees.
 
 ### TCP — Transmission Control Protocol
-- **Connection-based**: starts with the 3-way handshake:
+Connection-based; starts with the **3-way handshake**:
 
 ```
 client ── SYN ──────► server      "want to talk?"
 client ◄─ SYN-ACK ─── server      "yes, ready"
-client ── ACK ──────► server      "great, starting"     → connection established
+client ── ACK ──────► server      "starting"          → connection established
 ```
 
-- Guarantees: **all packets arrive**, **in order**, **uncorrupted**. Lost packets are re-sent automatically. Receiver acknowledges (ACK) everything.
-- Cost: slower, more overhead.
-- Used by: HTTP/HTTPS, databases, SSH, email — anything where a missing byte is unacceptable. **Everything in our course rides on TCP.**
-- Analogy: registered mail with delivery confirmation and automatic resend.
+Guarantees: **all packets arrive, in order, uncorrupted** — lost ones are re-sent automatically. Cost: slower, more overhead. Used by HTTP/HTTPS, databases, SSH — **everything in this course**. Analogy: registered mail with confirmation + automatic resend.
 
 ### UDP — User Datagram Protocol
-- No handshake, no ACK, no retransmit, no ordering. Fire and forget.
-- Cost of TCP's guarantees removed → very fast, low latency.
-- Used by: video calls, live streams, online games, DNS queries. (A lost video frame is better skipped than re-sent late.)
-- Analogy: throwing postcards into the mailbox — most arrive, you never check.
+No handshake, no ACK, no ordering — fire and forget. Very fast. Used by video calls, streaming, games, DNS queries (a lost video frame is better skipped than re-sent late). Analogy: postcards.
 
-### Rule of thumb
-> Correctness required → TCP. Speed matters and losses are tolerable → UDP.
+> Rule: correctness required → TCP. Speed matters and losses tolerable → UDP.
 
----
-
-## 8. The OSI Model — the map of network layers
-
-A conceptual model splitting networking into 7 layers. Each layer only talks to the layer above/below. Interviews love it; engineers use layers 3, 4, 7 daily.
+## 9. The OSI model — the map of network layers
 
 ```
 7  Application   HTTP, DNS, SMTP          ← your Spring Boot lives here
 6  Presentation  TLS encryption, encoding
 5  Session       connection sessions
-4  Transport     TCP / UDP, ports          ← "Layer 4 load balancer" (AWS NLB)
+4  Transport     TCP / UDP, ports          ← "Layer 4 LB" (AWS NLB)
 3  Network       IP, routers               ← packets routed here
 2  Data Link     MAC, switches, Ethernet
 1  Physical      cables, radio, light
@@ -199,95 +170,102 @@ A conceptual model splitting networking into 7 layers. Each layer only talks to 
 
 Mnemonic (bottom-up): **P**lease **D**o **N**ot **T**hrow **S**ausage **P**izza **A**way.
 
-### Why you actually care
-- Production vocabulary: "L4 vs L7 load balancer" (Phase 10), "L3 firewall rule".
-- Debugging ladder — check from the bottom up:
-  1. Cable/WiFi up? (L1–2)
-  2. `ping <ip>` works? (L3)
-  3. Port open — `nc -zv host 443`? (L4)
-  4. App answers — `curl`? (L7)
+Why you care: production vocabulary ("L4 vs L7 load balancer" — Phase 10) and the **debugging ladder**, bottom-up:
+1. Cable/WiFi up? (L1–2) → 2. `ping <ip>` (L3) → 3. port open, `nc -zv host 443` (L4) → 4. app answers, `curl` (L7).
 
-The simpler **TCP/IP model** (what the Internet actually uses) collapses these into 4: Link → Internet → Transport → Application.
+(The real Internet uses the simpler 4-layer TCP/IP model: Link → Internet → Transport → Application.)
 
----
-
-## 9. The full picture — one request with everything labeled
+## 10. The full picture — one request, everything labeled
 
 ```
 Browser wants  https://api.example.com/users
 
 [L7] browser builds HTTP request
 [L4] TCP: connect to port 443, 3-way handshake, split into segments
-[L3] IP: each packet stamped  src=192.168.0.101  dst=<server public IP>
+[L3] IP: packets stamped  src=192.168.0.101  dst=<server public IP>
 [L2] MAC: frame addressed to home router's MAC
 [L1] bits over WiFi radio waves
-        │
         ▼
-Home router: NAT rewrites src → public IP :random-port, remembers mapping
+Home router: NAT rewrites src → public IP :port, remembers mapping
         ▼
 10–25 Internet routers, each forwarding by destination IP
         ▼
-Server machine: has public IP, program listening on port 443
+Server: public IP, program listening on 443
 [L4] TCP reassembles segments in order
-[L7] Spring Boot receives the HTTP request, responds
+[L7] Spring Boot handles the request, responds
         ▼
-Response packets flow back; NAT maps them to the laptop; browser renders
+Response flows back; NAT maps it to the laptop; browser renders
 ```
 
-If you can narrate this diagram from memory, Phase 1 is yours.
+If you can narrate this from memory, Phase 1 is yours.
 
----
+## 11. Common mistakes
 
-## 10. Common mistakes
-
+- Thinking "the cloud" isn't physical — AWS = someone else's computers, rented.
+- Thinking a server is special hardware — it's a *program that listens*.
+- Thinking data goes directly A→B (it hops 10–25 routers) or as one piece (always packets).
+- Thinking WiFi is the Internet — WiFi is only the last few meters.
 - Confusing IP with MAC (postal address vs national ID; L3 vs L2).
-- Thinking `localhost` is reachable by teammates on your WiFi — it never leaves your machine. Use your private IP (`192.168.x.x`) for that.
-- Binding a server to `127.0.0.1` and wondering why the network can't reach it (should be `0.0.0.0`). You WILL hit this with Docker.
-- Thinking NAT is a firewall by design — it blocks inbound as a side effect, but it is not a security feature.
-- Saying "TCP is better than UDP" — they solve different problems.
+- Thinking teammates can open your `localhost` — use your private IP for that.
+- Binding a server to `127.0.0.1` and wondering why the network can't reach it (`0.0.0.0`!). You WILL hit this with Docker.
+- Thinking NAT is a security feature (it blocks inbound only as a side effect).
+- Saying "TCP is better than UDP" — different problems, different tools.
 
-## 11. Best practices
+## 12. Best practices
 
-- Learn to instinctively run the debugging ladder: `ping` → `ss`/port check → `curl`.
-- Always know: what IP am I on, what's my public IP, what ports are my apps using.
-- Prefer standard ports in production (80/443 outside, anything behind the proxy inside).
+- Instinctively run the debugging ladder: `ping` → port check → `curl`.
+- Always know: my private IP, my public IP, which ports my apps use.
+- Assume the network **will** fail, slow down, drop packets — design with timeouts/retries (later phases).
+- Latency is physics: keep servers close to users.
 
-## 12. Interview questions
+## 13. Interview questions
 
-1. IPv4 vs IPv6 — why does IPv6 exist?
-2. Public vs private IP? Which ranges are private?
-3. What is NAT and why can't an outside machine connect to your laptop at home?
-4. What is 127.0.0.1? Difference between binding to 127.0.0.1 vs 0.0.0.0?
-5. Router vs switch — which OSI layer, which address type?
-6. Explain the TCP 3-way handshake. Why does HTTP use TCP, but video calls use UDP?
-7. Two programs want port 8080 — what happens? How do you find/fix it?
-8. Name the OSI layers and one protocol per layer. What does "L7 load balancer" mean?
+1. What happens conceptually when a browser requests a page? (client → routers → server → response)
+2. What is a packet, and why split data into packets? *(fair wire-sharing, retransmit only lost pieces, route around failures)*
+3. Is "client" a property of a machine or a conversation? Give an example of a program being both.
+4. What does a router do? Does it know the full path? Router vs switch — which layer, which address type?
+5. IPv4 vs IPv6 — why does IPv6 exist? Which ranges are private?
+6. What is NAT? Why can't an outside machine connect to your laptop at home?
+7. What is 127.0.0.1? Binding to 127.0.0.1 vs 0.0.0.0?
+8. Explain the TCP 3-way handshake. Why does HTTP use TCP but video calls use UDP?
+9. Two programs want port 8080 — what happens? How do you find and fix it?
+10. Name the OSI layers with one protocol each. What does "L7 load balancer" mean?
+11. Why is a US server slower than a Singapore one for a user in Bangladesh, even if both are equally fast?
 
-## 13. Lab
+## 14. LAB
 
 ```bash
-# identity
-ip addr                    # find your interfaces + private IP
-curl ifconfig.me           # public IP → different! that's NAT in action
-ip route                   # find your "default gateway" = your router's IP
+# A. distance = latency
+ping -c 4 google.com               # note time=XXms (full round trip)
+ping -c 4 facebook.com; ping -c 4 gov.bd     # compare — where are the servers?
+traceroute google.com              # every line = one router; line 1 = your home router
 
-# ports & servers
-python3 -m http.server 8000        # terminal 1
-sudo ss -tulpn | grep 8000         # terminal 2: see it LISTENing
-python3 -m http.server 8000        # terminal 3: watch it FAIL — port taken
+# B. identity
+ip addr                            # interfaces + private IP
+curl ifconfig.me                   # public IP → different! that's NAT
+ip route                           # your default gateway = your router
 
-# reach your own machine from another device
+# C. be a client without a browser
+curl -v https://example.com        # ">" = request, "<" = response; "Connected" = TCP handshake done
+
+# D. be a server
+python3 -m http.server 8000        # terminal 1 — you are now a server
+curl http://localhost:8000         # terminal 2 — and its client; watch T1 log it
+sudo ss -tulpn | grep 8000         # see it LISTEN
+python3 -m http.server 8000        # terminal 3 — FAILS: port taken
+
+# E. reach your machine from another device
 # open http://<your-private-ip>:8000 from your PHONE on the same WiFi
-# → works via private IP, would NOT work via localhost. Understand why.
-
-# TCP handshake in real life
-curl -v https://example.com        # "Connected to ..." line = handshake done
+# works via private IP; would NOT via localhost. Understand why.
 ```
 
-## 14. ASSIGNMENT 01 (submit answers to Claude for review)
+## 15. ASSIGNMENT 01 (submit to Claude)
 
-1. Run `ip addr` and `curl ifconfig.me`. Paste both outputs and explain, in your own words, why the IPs differ and what NAT did.
-2. Draw (ASCII, from memory) the journey of a request from your browser to a Spring Boot server, labeling: private IP, public IP, NAT, router, port, TCP.
-3. Your Spring Boot app on your laptop must be shown to a teammate on the same office WiFi. Exactly what URL do you give them, and what conditions must be true for it to work?
-4. Explain why `application.properties` setting `server.address=127.0.0.1` would break a Dockerized Spring Boot app. (Reason from first principles — we haven't done Docker yet, guess bravely.)
-5. Answer interview questions 3, 4, 6 from memory, in writing.
+1. `traceroute` to 3 sites — local (BD), regional (Singapore/India), US (`mit.edu`). Record hop counts + times; explain the differences in 2–3 sentences.
+2. Run `ip addr` and `curl ifconfig.me`; paste both and explain why the IPs differ and what NAT did.
+3. From memory (no peeking): draw the ASCII journey of a request from browser to Spring Boot server, labeling private IP, public IP, NAT, router, port, TCP.
+4. Explain to an imaginary junior (5–6 sentences): what happens when they open a website — using *client, server, packet, router*.
+5. Your Spring Boot app must be shown to a teammate on the same office WiFi. What URL do you give, and what must be true for it to work?
+6. Why would `server.address=127.0.0.1` break a Dockerized Spring Boot app? (Reason from first principles.)
+7. A Spring Boot app calls PostgreSQL and an external payment API. List every client role and every server role.
+8. Interview questions 4, 6, 8 — answer from memory in writing.
